@@ -21,6 +21,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: owdev-init-couchdb
+  namespace: openwhisk
   labels:
     name: owdev-init-couchdb
     heritage: "Helm"
@@ -96,7 +97,6 @@ spec:
         # tag to use for git clone to get ansible files to initialize couchdb
         - name: "OW_GIT_TAG_OPENWHISK"
           value: "1.0.0"
-
 ---
 # Source: openwhisk/templates/gen-certs-job.yaml
 #
@@ -119,6 +119,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: owdev-gen-certs
+  namespace: openwhisk
   labels:
     name: owdev-gen-certs
     heritage: "Helm"
@@ -161,7 +162,6 @@ spec:
             configMapKeyRef:
               name: owdev-whisk.config
               key: whisk_api_host_name
-
 ---
 # Source: openwhisk/templates/install-packages-job.yaml
 #
@@ -185,6 +185,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: owdev-install-packages
+  namespace: openwhisk
   labels:
     name: owdev-install-packages
     heritage: "Helm"
@@ -242,7 +243,7 @@ spec:
                 name: owdev-whisk.config
                 key: whisk_system_namespace
           - name: "WHISK_API_GATEWAY_HOST_V2"
-            value: "http://owdev-apigateway.default.svc.cluster.local:9000/v2"
+            value: "http://owdev-apigateway.openwhisk.svc.cluster.local:9000/v2"
 
           # Provider database configuration
           # Use the internally deployed CouchDB service for the providers

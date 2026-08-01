@@ -20,6 +20,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: owdev-controller
+  namespace: openwhisk
   labels:
     name: owdev-controller
     heritage: "Helm"
@@ -52,7 +53,7 @@ spec:
         imagePullPolicy: "IfNotPresent"
         env:
         - name: "READINESS_URL"
-          value: http://owdev-couchdb.default.svc.cluster.local:5984/ow_kube_couchdb_initialized_marker
+          value: http://owdev-couchdb.openwhisk.svc.cluster.local:5984/ow_kube_couchdb_initialized_marker
         command: ["sh", "-c", "while true; do echo 'checking CouchDB readiness'; wget -T 5 --spider $READINESS_URL --header=\"Authorization: Basic d2hpc2tfYWRtaW46c29tZV9wYXNzdzByZA==\"; result=$?; if [ $result -eq 0 ]; then echo 'Success: CouchDB is ready!'; break; fi; echo '...not ready yet; sleeping 3 seconds before retry'; sleep 3; done;"]
       # The lean controller requires invoker volumes mounts
 
@@ -163,7 +164,7 @@ spec:
 
         # Kafka properties
         - name: "KAFKA_HOSTS"
-          value: "owdev-kafka-0.owdev-kafka.default.svc.cluster.local:9092"
+          value: "owdev-kafka-0.owdev-kafka.openwhisk.svc.cluster.local:9092"
         - name: "CONFIG_whisk_kafka_replicationFactor"
           value: ""
         - name: "CONFIG_whisk_kafka_topics_cacheInvalidation_retentionBytes"
@@ -219,7 +220,7 @@ spec:
               name: owdev-db.config
               key: db_protocol
         - name: "CONFIG_whisk_couchdb_host"
-          value: "owdev-couchdb.default.svc.cluster.local"
+          value: "owdev-couchdb.openwhisk.svc.cluster.local"
         - name: "CONFIG_whisk_couchdb_provider"
           valueFrom:
             configMapKeyRef:

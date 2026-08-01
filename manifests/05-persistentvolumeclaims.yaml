@@ -19,6 +19,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: owdev-couchdb-pvc
+  namespace: openwhisk
   labels:
     heritage: "Helm"
     release: "owdev"

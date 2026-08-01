@@ -20,6 +20,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: owdev-controller
+  namespace: openwhisk
   labels:
     name: owdev-controller
     heritage: "Helm"
@@ -32,7 +33,6 @@ spec:
   ports:
     - port: 8080
       name: http
-
 ---
 # Source: openwhisk/templates/couchdb-svc.yaml
 #
@@ -57,6 +57,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: owdev-couchdb
+  namespace: openwhisk
   labels:
     name: owdev-couchdb
     heritage: "Helm"
@@ -69,7 +70,6 @@ spec:
   ports:
     - port: 5984
       name: couchdb
-
 ---
 # Source: openwhisk/templates/nginx-svc.yaml
 #
@@ -92,6 +92,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: owdev-nginx
+  namespace: openwhisk
   labels:
     name: owdev-nginx
     heritage: "Helm"

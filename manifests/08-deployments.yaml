@@ -21,6 +21,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: owdev-couchdb
+  namespace: openwhisk
   labels:
     name: owdev-couchdb
     heritage: "Helm"
@@ -71,7 +72,6 @@ spec:
         - name: database-storage
           persistentVolumeClaim:
             claimName: owdev-couchdb-pvc
-
 ---
 # Source: openwhisk/templates/nginx-pod.yaml
 #
@@ -94,6 +94,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: owdev-nginx
+  namespace: openwhisk
   labels:
     name: owdev-nginx
     heritage: "Helm"
@@ -133,7 +134,7 @@ spec:
         imagePullPolicy: "IfNotPresent"
         env:
         - name: "READINESS_URL"
-          value: http://owdev-controller.default.svc.cluster.local:8080/ping
+          value: http://owdev-controller.openwhisk.svc.cluster.local:8080/ping
         command: ["sh", "-c", "result=1; until [ $result -eq 0 ]; do echo 'Checking controller readiness'; wget -T 5 --spider $READINESS_URL; result=$?; sleep 1; done; echo 'Success: controller is ready'"]
       containers:
       - name: nginx
