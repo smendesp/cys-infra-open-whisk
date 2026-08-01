@@ -112,7 +112,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: owdev-core
-    namespace: "default"
+    namespace: "openwhisk"
 
 ---
 # Source: openwhisk/templates/init-rolebind.yaml
@@ -144,7 +144,7 @@ metadata:
     app: owdev-openwhisk
 subjects:
 - kind: ServiceAccount
-  namespace: "default"
+  namespace: "openwhisk"
   name: owdev-init-sa
 roleRef:
   kind: Role
@@ -187,7 +187,7 @@ metadata:
     app: owdev-openwhisk
 subjects:
 - kind: ServiceAccount
-  namespace: "default"
+  namespace: "openwhisk"
   name:  owdev-core 
 roleRef:
   kind: Role
