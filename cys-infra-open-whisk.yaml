@@ -28,25 +28,19 @@ k8s:
     explicitStorageClass: ""
 
 # ---------------------------------------------------------------------------
-# Affinity e Toleration - Posicionamento de pods nos nodes
-# Descomente para clusters multi-node com nodes dedicados.
+# Affinity e Toleration - Single-node (sem restricao de labels)
+# Para multi-node com nodes dedicados, aplique os labels:
+#   kubectl label node <NODE> openwhisk-role=invoker
+#   kubectl label node <NODE> openwhisk-role=core
+#   kubectl label node <NODE> openwhisk-role=edge
+#   kubectl label node <NODE> openwhisk-role=provider
+# Entao ative affinity.enabled: true e remova as linhas abaixo.
 # ---------------------------------------------------------------------------
 affinity:
-  enabled: true
-  # Label nodes com: kubectl label node <NODE> openwhisk-role=invoker
-  #                     kubectl label node <NODE> openwhisk-role=core
-  #                     kubectl label node <NODE> openwhisk-role=edge
+  enabled: false
 
 toleration:
   enabled: false
-
-# Para cluster single-node, descomente as linhas abaixo:
-# affinity:
-#   enabled: false
-# toleration:
-#   enabled: false
-# invoker:
-#   options: "-Dwhisk.kubernetes.user-pod-node-affinity.enabled=false"
 
 # ---------------------------------------------------------------------------
 # Invoker - Executor das actions
@@ -60,6 +54,7 @@ invoker:
   # Memoria total disponivel para pool de containers de usuario
   containerPool:
     userMemory: "2048m"
+  options: "-Dwhisk.kubernetes.user-pod-node-affinity.enabled=false"
 
 # ---------------------------------------------------------------------------
 # Controller - Orquestrador principal do OpenWhisk
@@ -148,8 +143,8 @@ limits:
 # ---------------------------------------------------------------------------
 providers:
   alarm:
-    enabled: true
-    apiPort: 32300
+    enabled: false
+  # apiPort: 32300
   cloudant:
     enabled: false
   kafkaFeed:
