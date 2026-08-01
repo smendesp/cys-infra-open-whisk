@@ -21,6 +21,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: owdev-init-role
+  namespace: openwhisk
   labels:
     heritage: "Helm"
     release: "owdev"
@@ -30,7 +31,6 @@ rules:
 - apiGroups: [""]
   resources: ["secrets", "configmaps"]
   verbs: ["create", "get"]
-
 ---
 # Source: openwhisk/templates/invoker-role.yaml
 #
@@ -60,6 +60,7 @@ kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: owdev-invoker
+  namespace: openwhisk
   labels:
     heritage: "Helm"
     release: "owdev"
@@ -75,7 +76,6 @@ rules:
 - apiGroups: [""]
   resources: ["pods/log"]
   verbs: ["get", "list"]
-
 ---
 # Source: openwhisk/templates/core-rolebind.yaml
 #
@@ -100,6 +100,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: owdev-allow-view
+  namespace: openwhisk
   labels:
     heritage: "Helm"
     release: "owdev"
@@ -113,7 +114,6 @@ subjects:
   - kind: ServiceAccount
     name: owdev-core
     namespace: "openwhisk"
-
 ---
 # Source: openwhisk/templates/init-rolebind.yaml
 #
@@ -137,6 +137,7 @@ kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: owdev-init-rb
+  namespace: openwhisk
   labels:
     heritage: "Helm"
     release: "owdev"
@@ -150,7 +151,6 @@ roleRef:
   kind: Role
   name: owdev-init-role
   apiGroup: rbac.authorization.k8s.io
-
 ---
 # Source: openwhisk/templates/invoker-rolebind.yaml
 #
@@ -180,6 +180,7 @@ kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: owdev-invoker
+  namespace: openwhisk
   labels:
     heritage: "Helm"
     release: "owdev"
