@@ -24,7 +24,6 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        working-directory: open-whisk
 
       - name: Terraform Plan
         env:
@@ -38,7 +37,6 @@ jobs:
             -var="openwhisk_api_host_port=${TF_VAR_openwhisk_api_host_port:-31001}" \
             -var="openwhisk_auth_system_key=${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}" \
             -var="openwhisk_db_password=${TF_VAR_openwhisk_db_password:-some_passw0rd}"
-        working-directory: open-whisk
 
   apply:
     name: Deploy OpenWhisk no Kubernetes
@@ -56,7 +54,6 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        working-directory: open-whisk
 
       - name: Terraform Apply (renderizar manifests)
         env:
@@ -70,7 +67,6 @@ jobs:
             -var="openwhisk_api_host_port=${TF_VAR_openwhisk_api_host_port:-31001}" \
             -var="openwhisk_auth_system_key=${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}" \
             -var="openwhisk_db_password=${TF_VAR_openwhisk_db_password:-some_passw0rd}"
-        working-directory: open-whisk
 
       - name: Criar diretorio de destino na VM
         uses: appleboy/ssh-action@v1
@@ -92,9 +88,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: ${{ secrets.SSH_PORT }}
-          source: "open-whisk/deploy"
+          source: "deploy"
           target: "/opt/cys/openwhisk/deploy"
-          strip_components: 2
+          strip_components: 1
 
       - name: Aplicar manifestos no cluster
         uses: appleboy/ssh-action@v1
