@@ -90,7 +90,8 @@ O deploy e feito via GitHub Actions, disparado por PR na branch `main` ou manual
 | `SSH_PORT` | secret | Porta SSH |
 | `OPENWHISK_API_HOST` | var | Hostname da API OpenWhisk |
 | `OPENWHISK_API_HOST_PORT` | var | Porta da API (ex: 31001) |
-| `OPENWHISK_AUTH_SYSTEM_KEY` | secret | Chave de autenticacao do sistema |
+| `OPENWHISK_AUTH_SYSTEM_KEY` | secret | Chave de autenticacao do sistema (uuid:secret) |
+| `OPENWHISK_AUTH_GUEST_KEY` | secret | Chave de autenticacao guest (deve ser diferente da system) |
 | `OPENWHISK_DB_PASSWORD` | secret | Senha do CouchDB |
 
 ## Uso local

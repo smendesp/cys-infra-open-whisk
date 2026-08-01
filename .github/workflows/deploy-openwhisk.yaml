@@ -38,12 +38,14 @@ jobs:
           TF_VAR_openwhisk_api_host: ${{ vars.OPENWHISK_API_HOST }}
           TF_VAR_openwhisk_api_host_port: ${{ vars.OPENWHISK_API_HOST_PORT }}
           TF_VAR_openwhisk_auth_system_key: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
+          TF_VAR_openwhisk_auth_guest_key: ${{ secrets.OPENWHISK_AUTH_GUEST_KEY }}
           TF_VAR_openwhisk_db_password: ${{ secrets.OPENWHISK_DB_PASSWORD }}
         run: |
           terraform plan \
             -var="openwhisk_api_host=${TF_VAR_openwhisk_api_host:-localhost}" \
             -var="openwhisk_api_host_port=${TF_VAR_openwhisk_api_host_port:-31001}" \
             -var="openwhisk_auth_system_key=${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}" \
+            -var="openwhisk_auth_guest_key=${TF_VAR_openwhisk_auth_guest_key:-a7fa79f2-8e4c-45d2-b3f1-92cd7408e12f:6dZxC2nBqLpR8vW4kYsT1aUfM3eH5gJ7dF9cN0lA2bC4pQ6rS8t}" \
             -var="openwhisk_db_password=${TF_VAR_openwhisk_db_password:-some_passw0rd}"
 
   deploy:
@@ -68,12 +70,14 @@ jobs:
           TF_VAR_openwhisk_api_host: ${{ vars.OPENWHISK_API_HOST }}
           TF_VAR_openwhisk_api_host_port: ${{ vars.OPENWHISK_API_HOST_PORT }}
           TF_VAR_openwhisk_auth_system_key: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
+          TF_VAR_openwhisk_auth_guest_key: ${{ secrets.OPENWHISK_AUTH_GUEST_KEY }}
           TF_VAR_openwhisk_db_password: ${{ secrets.OPENWHISK_DB_PASSWORD }}
         run: |
           terraform plan -out=tfplan \
             -var="openwhisk_api_host=${TF_VAR_openwhisk_api_host:-localhost}" \
             -var="openwhisk_api_host_port=${TF_VAR_openwhisk_api_host_port:-31001}" \
             -var="openwhisk_auth_system_key=${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}" \
+            -var="openwhisk_auth_guest_key=${TF_VAR_openwhisk_auth_guest_key:-a7fa79f2-8e4c-45d2-b3f1-92cd7408e12f:6dZxC2nBqLpR8vW4kYsT1aUfM3eH5gJ7dF9cN0lA2bC4pQ6rS8t}" \
             -var="openwhisk_db_password=${TF_VAR_openwhisk_db_password:-some_passw0rd}"
 
       - name: Terraform Apply (renderizar manifests)
@@ -81,6 +85,7 @@ jobs:
           TF_VAR_openwhisk_api_host: ${{ vars.OPENWHISK_API_HOST }}
           TF_VAR_openwhisk_api_host_port: ${{ vars.OPENWHISK_API_HOST_PORT }}
           TF_VAR_openwhisk_auth_system_key: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
+          TF_VAR_openwhisk_auth_guest_key: ${{ secrets.OPENWHISK_AUTH_GUEST_KEY }}
           TF_VAR_openwhisk_db_password: ${{ secrets.OPENWHISK_DB_PASSWORD }}
         run: |
           terraform apply tfplan
@@ -208,12 +213,14 @@ jobs:
           TF_VAR_openwhisk_api_host: ${{ vars.OPENWHISK_API_HOST }}
           TF_VAR_openwhisk_api_host_port: ${{ vars.OPENWHISK_API_HOST_PORT }}
           TF_VAR_openwhisk_auth_system_key: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
+          TF_VAR_openwhisk_auth_guest_key: ${{ secrets.OPENWHISK_AUTH_GUEST_KEY }}
           TF_VAR_openwhisk_db_password: ${{ secrets.OPENWHISK_DB_PASSWORD }}
         run: |
           terraform destroy -auto-approve \
             -var="openwhisk_api_host=${TF_VAR_openwhisk_api_host:-localhost}" \
             -var="openwhisk_api_host_port=${TF_VAR_openwhisk_api_host_port:-31001}" \
             -var="openwhisk_auth_system_key=${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}" \
+            -var="openwhisk_auth_guest_key=${TF_VAR_openwhisk_auth_guest_key:-a7fa79f2-8e4c-45d2-b3f1-92cd7408e12f:6dZxC2nBqLpR8vW4kYsT1aUfM3eH5gJ7dF9cN0lA2bC4pQ6rS8t}" \
             -var="openwhisk_db_password=${TF_VAR_openwhisk_db_password:-some_passw0rd}"
 
       - name: kubectl delete namespace openwhisk

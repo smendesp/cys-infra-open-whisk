@@ -18,6 +18,7 @@ resource "null_resource" "render_manifests" {
       var.openwhisk_api_host,
       var.openwhisk_api_host_port,
       var.openwhisk_auth_system_key,
+      var.openwhisk_auth_guest_key,
       var.openwhisk_db_password
     ]))
   }
@@ -32,6 +33,7 @@ resource "null_resource" "render_manifests" {
       export OPENWHISK_API_HOST="${var.openwhisk_api_host}"
       export OPENWHISK_API_HOST_PORT="${var.openwhisk_api_host_port}"
       export OPENWHISK_AUTH_SYSTEM_KEY="${var.openwhisk_auth_system_key}"
+      export OPENWHISK_AUTH_GUEST_KEY="${var.openwhisk_auth_guest_key}"
       export OPENWHISK_DB_PASSWORD="${var.openwhisk_db_password}"
 
       for f in "${path.module}/manifests"/*.yaml; do
