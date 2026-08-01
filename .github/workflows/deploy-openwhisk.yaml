@@ -27,6 +27,12 @@ jobs:
           set -euo pipefail
           mkdir -p deploy
 
+          # defaults para evitar campos vazios no schema do Helm
+          export OPENWHISK_API_HOST="${OPENWHISK_API_HOST:-localhost}"
+          export OPENWHISK_API_HOST_PORT="${OPENWHISK_API_HOST_PORT:-31001}"
+          export OPENWHISK_AUTH_SYSTEM_KEY="${OPENWHISK_AUTH_SYSTEM_KEY:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}"
+          export OPENWHISK_DB_PASSWORD="${OPENWHISK_DB_PASSWORD:-some_passw0rd}"
+
           envsubst < cys-infra-open-whisk.yaml > deploy/cys-infra-open-whisk.yaml
 
       - name: Criar diretorio de destino na VM
