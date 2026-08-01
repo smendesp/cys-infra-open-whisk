@@ -1,0 +1,187 @@
+name: Deploy OpenWhisk
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy OpenWhisk no Kubernetes
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout do repositorio
+        uses: actions/checkout@v6
+
+      - name: Preparar cys-infra-open-whisk.yaml renderizado
+        env:
+          OPENWHISK_API_HOST: ${{ vars.OPENWHISK_API_HOST }}
+          OPENWHISK_API_HOST_PORT: ${{ vars.OPENWHISK_API_HOST_PORT }}
+          OPENWHISK_AUTH_SYSTEM_KEY: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
+          OPENWHISK_DB_PASSWORD: ${{ secrets.OPENWHISK_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p deploy
+
+          envsubst < cys-infra-open-whisk.yaml > deploy/cys-infra-open-whisk.yaml
+
+      - name: Criar diretorio de destino na VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            sudo rm -drf /opt/cys/openwhisk
+            sudo mkdir -p /opt/cys/openwhisk
+
+      - name: Copiar manifestos para VM
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "deploy"
+          target: "/opt/cys/openwhisk/deploy"
+          strip_components: 1
+
+      - name: Instalar Helm e implantar OpenWhisk
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -euo pipefail
+
+            # ---- Instalar Helm se necessario ----
+            if ! command -v helm &> /dev/null; then
+              echo "==> Instalando Helm v3..."
+              curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | sudo bash
+            fi
+            echo "Helm version: $(helm version --short)"
+
+            # ---- Adicionar repo do OpenWhisk ----
+            if ! helm repo list 2>/dev/null | grep -q 'openwhisk'; then
+              helm repo add openwhisk https://openwhisk.apache.org/charts
+            fi
+            helm repo update
+
+            # ---- Criar namespace se nao existir ----
+            kubectl get namespace openwhisk &>/dev/null \
+              || kubectl create namespace openwhisk
+
+            # ---- Implantar com Helm ----
+            echo "==> Implantando OpenWhisk..."
+            EXISTING=$(helm list -n openwhisk -q 2>/dev/null || true)
+
+            if echo "$EXISTING" | grep -q '^owdev$'; then
+              echo "Upgrade de release existente..."
+              helm upgrade owdev openwhisk/openwhisk \
+                -n openwhisk \
+                -f /opt/cys/openwhisk/deploy/cys-infra-open-whisk.yaml \
+                --timeout 30m \
+                --wait
+            else
+              echo "Instalando nova release..."
+              helm install owdev openwhisk/openwhisk \
+                -n openwhisk \
+                -f /opt/cys/openwhisk/deploy/cys-infra-open-whisk.yaml \
+                --create-namespace \
+                --timeout 30m \
+                --wait
+            fi
+
+            echo ""
+            echo "==> Status do Helm release =="
+            helm status owdev -n openwhisk
+
+      - name: Aguardar pods ficarem prontos
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -euo pipefail
+
+            echo "==> Aguardando pods (timeout=900s)..."
+            kubectl wait --for=condition=Ready pods \
+              --all -n openwhisk --timeout=900s || true
+
+            echo ""
+            echo "==> Aguardando conclusao do install-packages..."
+            kubectl wait --for=jsonpath='{.status.phase}'=Succeeded \
+              pods -n openwhisk -l name=owdev-install-packages \
+              --timeout=600s || true
+
+            kubectl get pods -n openwhisk -o wide
+
+      - name: Verificar implantacao
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            echo "=== Helm releases ==="
+            helm list -n openwhisk
+
+            echo ""
+            echo "=== Pods ==="
+            kubectl get pods -n openwhisk -o wide
+
+            echo ""
+            echo "=== Services ==="
+            kubectl get svc -n openwhisk
+
+            echo ""
+            echo "=== Ingress ==="
+            kubectl get ingress -n openwhisk 2>/dev/null || echo "Nenhum Ingress configurado"
+
+            echo ""
+            echo "=== Helm Test ==="
+            helm test owdev -n openwhisk --timeout 300s || true
+
+            echo ""
+            echo "=== Resumo do rollout ==="
+            FAILED_PODS=$(kubectl get pods -n openwhisk \
+              --no-headers 2>/dev/null \
+              | grep -v -E 'Running|Completed|Succeeded' || true)
+            if [ -n "$FAILED_PODS" ]; then
+              echo "ALERTA: Pods com status diferente de Running/Completed:"
+              echo "$FAILED_PODS"
+              echo ""
+              echo "=== Logs dos pods com falha ==="
+              for pod in $(echo "$FAILED_PODS" | awk '{print $1}'); do
+                echo "--- $pod ---"
+                kubectl logs -n openwhisk "$pod" --all-containers=true --tail=100 || true
+              done
+              exit 1
+            fi
+            echo "Todos os pods estao Running ou Completed."
+
+      - name: Limpar diretorio de destino na VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            sudo rm -drf /opt/cys/openwhisk
