@@ -15,7 +15,7 @@ jobs:
     name: Terraform Plan (Preview)
     runs-on: ubuntu-latest
     environment: production
-    if: github.event_name == 'pull_request'
+
     steps:
       - name: Checkout do repositorio
         uses: actions/checkout@v6
