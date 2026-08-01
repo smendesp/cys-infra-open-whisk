@@ -12,10 +12,40 @@ on:
 
 jobs:
   plan:
-    name: Terraform Plan
+    name: Terraform Plan (Preview)
     runs-on: ubuntu-latest
     environment: production
     if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout do repositorio
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.9"
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        env:
+          TF_VAR_openwhisk_api_host: ${{ vars.OPENWHISK_API_HOST }}
+          TF_VAR_openwhisk_api_host_port: ${{ vars.OPENWHISK_API_HOST_PORT }}
+          TF_VAR_openwhisk_auth_system_key: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
+          TF_VAR_openwhisk_db_password: ${{ secrets.OPENWHISK_DB_PASSWORD }}
+        run: |
+          terraform plan \
+            -var="openwhisk_api_host=${TF_VAR_openwhisk_api_host:-localhost}" \
+            -var="openwhisk_api_host_port=${TF_VAR_openwhisk_api_host_port:-31001}" \
+            -var="openwhisk_auth_system_key=${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}" \
+            -var="openwhisk_db_password=${TF_VAR_openwhisk_db_password:-some_passw0rd}"
+
+  deploy:
+    name: Deploy no Kubernetes
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event_name != 'pull_request'
     steps:
       - name: Checkout do repositorio
         uses: actions/checkout@v6
@@ -41,23 +71,6 @@ jobs:
             -var="openwhisk_auth_system_key=${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}" \
             -var="openwhisk_db_password=${TF_VAR_openwhisk_db_password:-some_passw0rd}"
 
-  apply:
-    name: Deploy OpenWhisk no Kubernetes
-    runs-on: ubuntu-latest
-    environment: production
-    if: github.event_name != 'pull_request'
-    steps:
-      - name: Checkout do repositorio
-        uses: actions/checkout@v6
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "~> 1.9"
-
-      - name: Terraform Init
-        run: terraform init
-
       - name: Terraform Apply (renderizar manifests)
         env:
           TF_VAR_openwhisk_api_host: ${{ vars.OPENWHISK_API_HOST }}
@@ -65,11 +78,7 @@ jobs:
           TF_VAR_openwhisk_auth_system_key: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
           TF_VAR_openwhisk_db_password: ${{ secrets.OPENWHISK_DB_PASSWORD }}
         run: |
-          terraform apply -auto-approve \
-            -var="openwhisk_api_host=${TF_VAR_openwhisk_api_host:-localhost}" \
-            -var="openwhisk_api_host_port=${TF_VAR_openwhisk_api_host_port:-31001}" \
-            -var="openwhisk_auth_system_key=${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}" \
-            -var="openwhisk_db_password=${TF_VAR_openwhisk_db_password:-some_passw0rd}"
+          terraform apply tfplan
 
       - name: Criar diretorio de destino na VM
         uses: appleboy/ssh-action@v1
@@ -95,7 +104,7 @@ jobs:
           target: "/opt/cys/openwhisk/deploy"
           strip_components: 1
 
-      - name: Aplicar manifestos no cluster
+      - name: kubectl apply (aplicar no cluster)
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
