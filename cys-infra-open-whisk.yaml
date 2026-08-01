@@ -94,7 +94,9 @@ controller:
 # ---------------------------------------------------------------------------
 db:
   provider: "CouchDB"
-  auth: "whisk_admin:${OPENWHISK_DB_PASSWORD}"
+  auth:
+    username: "whisk_admin"
+    password: "${OPENWHISK_DB_PASSWORD}"
   protocol: http
   host: "owdev-couchdb.openwhisk.svc.cluster.local"
   port: 5984
@@ -108,9 +110,10 @@ db:
 
 # ---------------------------------------------------------------------------
 # Redis - Armazenamento em memoria (opcional, melhora performance)
+# Descomente e ajuste para ativar.
 # ---------------------------------------------------------------------------
-redis:
-  replicaCount: 0
+# redis:
+#   replicaCount: 1
 
 # ---------------------------------------------------------------------------
 # NGINX - Proxy reverso do OpenWhisk
@@ -121,9 +124,10 @@ nginx:
 
 # ---------------------------------------------------------------------------
 # APIGateway - Gateway de API integrado
+# Descomente e ajuste para ativar.
 # ---------------------------------------------------------------------------
-apigw:
-  replicaCount: 0
+# apigw:
+#   replicaCount: 1
 
 # ---------------------------------------------------------------------------
 # Limits - Limites de actions e triggers
