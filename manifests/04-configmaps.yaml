@@ -1,0 +1,823 @@
+# Source: openwhisk/templates/couchdb-init-cm.yaml
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: owdev-init-couchdb
+  labels:
+    heritage: "Helm"
+    release: "owdev"
+    chart: "openwhisk-1.0.0"
+    app: owdev-openwhisk
+data:
+  initdb.sh: |
+    #
+    # Licensed to the Apache Software Foundation (ASF) under one or more
+    # contributor license agreements.  See the NOTICE file distributed with
+    # this work for additional information regarding copyright ownership.
+    # The ASF licenses this file to You under the Apache License, Version 2.0
+    # (the "License"); you may not use this file except in compliance with
+    # the License.  You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    #
+  
+    # Clone OpenWhisk to get the ansible playbooks needed to initialize CouchDB
+    git clone https://github.com/apache/openwhisk /openwhisk
+    pushd /openwhisk
+        git checkout $OW_GIT_TAG_OPENWHISK
+    popd
+  
+    # Install the secrets whisk.auth.guest and whisk.auth.system into the cloned tree
+    # after removing the defaults inherited from the checkout of openwhisk
+    rm -f /openwhisk/ansible/files/auth.guest /openwhisk/ansible/files/auth.whisk.system
+    cp -f /etc/whisk-auth/guest /openwhisk/ansible/files/auth.guest
+    cp -f /etc/whisk-auth/system /openwhisk/ansible/files/auth.whisk.system
+  
+    # Sanity check: all subjects must have unique keys
+    if cmp -s /openwhisk/ansible/files/auth.guest /openwhisk/ansible/files/auth.whisk.system; then
+        echo "FATAL ERROR: unable to initialize the OpenWhisk subjects database."
+        echo "Cannot use identical keys for whisk.auth.system and whisk.auth.guest."
+        exit 1
+    fi
+  
+    # generate db_local.ini so the ansible jobs know how to access the database
+    pushd /openwhisk/ansible
+        ansible-playbook -i environments/local setup.yml
+        ansible-playbook -i environments/local couchdb.yml --tags ini \
+                         -e db_prefix=$DB_PREFIX \
+                         -e db_protocol=$DB_PROTOCOL \
+                         -e db_host=$DB_HOST \
+                         -e db_username=$COUCHDB_USER \
+                         -e db_password=$COUCHDB_PASSWORD \
+                         -e db_port=$DB_PORT \
+                         -e openwhisk_home=/openwhisk
+    popd
+  
+    # Wait for CouchDB to be available before starting to configure it
+    until $( curl --output /dev/null --silent $DB_PROTOCOL://$DB_HOST:$DB_PORT/_utils ); do
+        echo "waiting for CouchDB to be available"
+        sleep 2
+    done
+  
+    # Enable single node mode (this also creates the system databases)
+    echo "Enabling single node cluster"
+    curl --silent -X POST -H "Content-Type: application/json" -u "$COUCHDB_USER:$COUCHDB_PASSWORD" $DB_PROTOCOL://$DB_HOST:$DB_PORT/_cluster_setup -d '{"action": "enable_single_node"}' || exit 1
+  
+    # disable reduce limits on views
+    echo "Disabling reduce limits on views"
+    curl --silent -X PUT -u "$COUCHDB_USER:$COUCHDB_PASSWORD" $DB_PROTOCOL://$DB_HOST:$DB_PORT/_node/couchdb@$NODENAME/_config/query_server_config/reduce_limit -d '"false"' || exit 1
+  
+  
+    # initialize the DB tables for OpenWhisk
+    pushd /openwhisk/ansible
+        ansible-playbook -i environments/local initdb.yml \
+                         -e db_prefix=$DB_PREFIX \
+                         -e db_protocol=$DB_PROTOCOL \
+                         -e db_host=$DB_HOST \
+                         -e db_username=$COUCHDB_USER \
+                         -e db_password=$COUCHDB_PASSWORD \
+                         -e db_port=$DB_PORT \
+                         -e openwhisk_home=/openwhisk
+  
+        ansible-playbook -i environments/local wipe.yml \
+                         -e db_prefix=$DB_PREFIX \
+                         -e db_protocol=$DB_PROTOCOL \
+                         -e db_host=$DB_HOST \
+                         -e db_username=$COUCHDB_USER \
+                         -e db_password=$COUCHDB_PASSWORD \
+                         -e db_port=$DB_PORT \
+                         -e openwhisk_home=/openwhisk
+    popd
+  
+    echo "Creating ow_kube_couchdb_initialized_marker database"
+    curl --silent -X PUT -u "$COUCHDB_USER:$COUCHDB_PASSWORD" $DB_PROTOCOL://$DB_HOST:$DB_PORT/ow_kube_couchdb_initialized_marker || exit 1
+  
+    echo "successfully initialized CouchDB for OpenWhisk"
+
+---
+# Source: openwhisk/templates/gen-certs-cm.yaml
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: owdev-gen-certs
+  labels:
+    heritage: "Helm"
+    release: "owdev"
+    chart: "openwhisk-1.0.0"
+    app: owdev-openwhisk
+data:
+  gencerts.sh: |+
+    #
+    # Licensed to the Apache Software Foundation (ASF) under one or more
+    # contributor license agreements.  See the NOTICE file distributed with
+    # this work for additional information regarding copyright ownership.
+    # The ASF licenses this file to You under the Apache License, Version 2.0
+    # (the "License"); you may not use this file except in compliance with
+    # the License.  You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    #
+  
+    if kubectl get secret $NGINX_CERT_SECRET; then
+        echo "using existing $NGINX_CERT_SECRET secret"
+    else
+        echo "generating new $NGINX_CERT_SECRET secret"
+        genssl.sh "*.$WHISK_API_HOST_NAME" server /cert-gen
+        kubectl create secret tls $NGINX_CERT_SECRET --cert=/cert-gen/openwhisk-server-cert.pem --key=/cert-gen/openwhisk-server-key.pem
+    fi
+
+---
+# Source: openwhisk/templates/install-packages-cm.yaml
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: owdev-install-packages-cm
+  labels:
+    heritage: "Helm"
+    release: "owdev"
+    chart: "openwhisk-1.0.0"
+    app: owdev-openwhisk
+data:
+  myTask.sh: |+
+    #
+    # Licensed to the Apache Software Foundation (ASF) under one or more
+    # contributor license agreements.  See the NOTICE file distributed with
+    # this work for additional information regarding copyright ownership.
+    # The ASF licenses this file to You under the Apache License, Version 2.0
+    # (the "License"); you may not use this file except in compliance with
+    # the License.  You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    #
+  
+    export OPENWHISK_HOME=/openwhisk
+  
+    export PROVIDER_DB_URL=$PROVIDER_DB_PROTOCOL://$PROVIDER_DB_USERNAME:$PROVIDER_DB_PASSWORD@$PROVIDER_DB_HOST:$PROVIDER_DB_PORT
+  
+    #####
+    # Install Route Mgmt Support
+    #####
+  
+    # Clone openwhisk repo to get installRouteMgmt.sh and core/routemgmt
+    git clone https://github.com/apache/openwhisk openwhisk
+    pushd openwhisk
+        git checkout $OW_GIT_TAG_OPENWHISK
+        rm -f /openwhisk/ansible/files/auth.guest /openwhisk/ansible/files/auth.whisk.system
+    popd
+  
+    # Setup env for installRouteMgmt.sh
+    if [ "$WHISK_API_GATEWAY_USER" ]; then
+        export GW_USER=$WHISK_API_GATEWAY_USER
+    else
+        export GW_USER=' '
+    fi
+    if [ "$WHISK_API_GATEWAY_PASSWORD" ]; then
+        export GW_PWD=$WHISK_API_GATEWAY_PASSWORD
+    else
+        export GW_PWD=' '
+    fi
+    if [ "$WHISK_API_GATEWAY_HOST_V2" ]; then
+        export GW_HOST_V2=$WHISK_API_GATEWAY_HOST_V2
+    else
+        echo "Must provide a value for WHISK_API_GATEWAY_HOST_V2"
+        exit 1
+    fi
+  
+    pushd $OPENWHISK_HOME/ansible/roles/routemgmt/files
+        # This operation is unreliable in a TravisCI environment (for unknown reasons),
+        # so try multiple times before giving up.
+        PASSED=false
+        TRIES=0
+        until $PASSED || [ $TRIES -eq 10 ]; do
+            if ./installRouteMgmt.sh $WHISK_AUTH $WHISK_API_HOST_URL $WHISK_SYSTEM_NAMESPACE /usr/local/bin/wsk; then
+                PASSED=true
+                echo "Successfully deployed routemgmt package"
+            else
+                echo "Failed to deploy routemgmt package; will pause, uninstall, and try again"
+                let TRIES=TRIES+1
+                sleep 10
+                ./uninstallRouteMgmt.sh $WHISK_AUTH $WHISK_API_HOST_URL $WHISK_SYSTEM_NAMESPACE /usr/local/bin/wsk;
+            fi
+        done
+        if ! $PASSED; then
+            echo "Giving up after 10 failed attempts to install the routemgmt package"
+            exit 1
+        fi
+    popd
+  
+    #####
+    # Install the OpenWhisk Catalog
+    #####
+    git clone https://github.com/apache/openwhisk-catalog openwhisk-catalog
+    pushd openwhisk-catalog
+        git checkout $OW_GIT_TAG_OPENWHISK_CATALOG
+    popd
+  
+    pushd openwhisk-catalog/packages
+        ./installCatalogUsingWskdeploy.sh $WHISK_AUTH $WHISK_API_HOST_URL /usr/local/bin/wsk || exit 1
+    popd
+  
+  
+    #####
+    # Install catalogs for each enabled Event Provider
+    #####
+  
+    # UGH: installCatalog.sh for the providers hardwires that it wants $OPENWHISK_HOME/bin/wsk
+    cp /usr/local/bin/wsk $OPENWHISK_HOME/bin/wsk
+  
+  
+    #####
+    # Install the catalog for the Alarm provider
+    #####
+  
+    if [ "$OW_INSTALL_ALARM_PROVIDER" == "yes" ]; then
+        cd /
+        git clone https://github.com/apache/openwhisk-package-alarms.git
+  
+        pushd /openwhisk-package-alarms
+            git checkout $OW_GIT_TAG_OPENWHISK_PACKAGE_ALARMS
+            ./installCatalog.sh $WHISK_AUTH $WHISK_API_HOST_URL $WHISK_API_HOST_URL worker0 $PROVIDER_DB_URL $ALARM_DB_PREFIX || exit 1
+        popd
+    fi
+  
+  
+    #####
+    # Install the catalog for the Kafka provider
+    #####
+  
+    if [ "$OW_INSTALL_KAFKA_PROVIDER" == "yes" ]; then
+        cd /
+        git clone https://github.com/apache/openwhisk-package-kafka.git
+  
+        pushd /openwhisk-package-kafka
+            git checkout $OW_GIT_TAG_OPENWHISK_PACKAGE_KAFKA
+            ./installKafka.sh $WHISK_AUTH $WHISK_API_HOST_URL $PROVIDER_DB_URL $KAFKA_DB_PREFIX $WHISK_API_HOST_URL || exit 1
+            ./installCatalog.sh $WHISK_AUTH $WHISK_API_HOST_URL $PROVIDER_DB_URL $KAFKA_DB_PREFIX $WHISK_API_HOST_URL || exit 1
+        popd
+    fi
+
+---
+# Source: openwhisk/templates/invoker-cm.yaml
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: owdev-invoker-scripts
+  labels:
+    heritage: "Helm"
+    release: "owdev"
+    chart: "openwhisk-1.0.0"
+    app: owdev-openwhisk
+data:
+  playbook.yml: |
+    #
+    # Licensed to the Apache Software Foundation (ASF) under one or more
+    # contributor license agreements.  See the NOTICE file distributed with
+    # this work for additional information regarding copyright ownership.
+    # The ASF licenses this file to You under the Apache License, Version 2.0
+    # (the "License"); you may not use this file except in compliance with
+    # the License.  You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    #
+
+---
+# Source: openwhisk/templates/nginx-cm.yaml
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: owdev-nginx
+  labels:
+    heritage: "Helm"
+    release: "owdev"
+    chart: "openwhisk-1.0.0"
+    app: owdev-openwhisk
+data:
+  nginx.conf: |
+    worker_rlimit_nofile 4096;
+
+    events {
+      worker_connections  4096;
+    }
+
+    http {
+      client_max_body_size 50M;
+
+      rewrite_log on;
+      # change log format to display the upstream information
+      log_format combined-upstream '$remote_addr - $remote_user [$time_local] '
+          '[#tid_$request_id] $request $status $body_bytes_sent '
+          '$http_referer $http_user_agent $upstream_addr';
+      access_log /logs/nginx_access.log combined-upstream;
+      error_log /logs/nginx_error.log error;
+
+      # needed to enable keepalive to upstream controllers
+      proxy_http_version 1.1;
+      proxy_set_header Connection "";
+
+      server {
+        listen 80;
+        listen 443 default ssl;
+
+        # match namespace, note while OpenWhisk allows a richer character set for a
+        # namespace, not all those characters are permitted in the (sub)domain name;
+        # if namespace does not match, no vanity URL rewriting takes place.
+        server_name ~^(?<namespace>[0-9a-zA-Z-]+)\.${OPENWHISK_API_HOST}$;
+
+        ssl_session_cache    shared:SSL:1m;
+        ssl_session_timeout  10m;
+        ssl_certificate      /etc/nginx/certs/tls.crt;
+        ssl_certificate_key  /etc/nginx/certs/tls.key;
+        ssl_verify_client off;
+        ssl_protocols        TLSv1.2;
+        ssl_ciphers ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256;
+        ssl_prefer_server_ciphers on;
+        proxy_ssl_session_reuse on;
+        proxy_ssl_verify off;
+
+        # Hack to convince nginx to dynamically resolve the dns entries.
+        resolver kube-dns.kube-system;
+        set $controllers owdev-controller.default.svc.cluster.local;
+        set $apigw owdev-apigateway.default.svc.cluster.local;
+
+        location /api/v1/web {
+            if ($namespace) {
+                rewrite    /(.*) /api/v1/web/${namespace}/$1 break;
+            }
+            proxy_pass http://$controllers:8080;
+            proxy_read_timeout 75s; # 70+5 additional seconds to allow controller to terminate request
+        }
+
+        location /api/v1 {
+            proxy_pass http://$controllers:8080;
+            proxy_read_timeout 75s; # 70+5 additional seconds to allow controller to terminate request
+        }
+
+        location /api {
+            proxy_pass http://$apigw:8080;
+        }
+
+        location /v1/health-check {
+            proxy_pass http://$apigw:9000;
+        }
+
+        location /v2 {
+            proxy_pass http://$apigw:9000;
+        }
+
+
+        location / {
+            if ($namespace) {
+              rewrite    /(.*) /api/v1/web/${namespace}/$1 break;
+            }
+            proxy_pass http://$controllers:8080;
+            proxy_read_timeout 75s; # 70+5 additional seconds to allow controller to terminate request
+        }
+
+        location /blackbox.tar.gz {
+            return 301 https://github.com/apache/openwhisk-runtime-docker/releases/download/sdk%400.1.0/blackbox-0.1.0.tar.gz;
+        }
+        # leaving this for a while for clients out there to update to the new endpoint
+        location /blackbox-0.1.0.tar.gz {
+            return 301 /blackbox.tar.gz;
+        }
+
+        location /OpenWhiskIOSStarterApp.zip {
+            return 301 https://github.com/openwhisk/openwhisk-client-swift/releases/download/0.2.3/starterapp-0.2.3.zip;
+        }
+
+        # redirect requests for specific binaries to the matching one from the latest openwhisk-cli release.
+        location /cli/go/download/linux/amd64 {
+            return 301 https://github.com/apache/openwhisk-cli/releases/download/latest/OpenWhisk_CLI-latest-linux-amd64.tgz;
+        }
+        location /cli/go/download/linux/386 {
+            return 301 https://github.com/apache/openwhisk-cli/releases/download/latest/OpenWhisk_CLI-latest-linux-386.tgz;
+        }
+        location /cli/go/download/mac/amd64 {
+            return 301 https://github.com/apache/openwhisk-cli/releases/download/latest/OpenWhisk_CLI-latest-mac-amd64.zip;
+        }
+        location /cli/go/download/mac/386 {
+            return 301 https://github.com/apache/openwhisk-cli/releases/download/latest/OpenWhisk_CLI-latest-mac-386.zip;
+        }
+        location /cli/go/download/windows/amd64 {
+            return 301 https://github.com/apache/openwhisk-cli/releases/download/latest/OpenWhisk_CLI-latest-windows-amd64.zip;
+        }
+        location /cli/go/download/windows/386 {
+            return 301 https://github.com/apache/openwhisk-cli/releases/download/latest/OpenWhisk_CLI-latest-windows-386.zip;
+        }
+
+        # redirect top-level cli downloads to the latest openwhisk-cli release.
+        location /cli/go/download {
+            return 301 https://github.com/apache/openwhisk-cli/releases/latest;
+        }
+      }
+    }
+
+---
+# Source: openwhisk/templates/ow-db-cm.yaml
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: owdev-db.config
+  labels:
+    heritage: "Helm"
+    release: "owdev"
+    chart: "openwhisk-1.0.0"
+    app: owdev-openwhisk
+data:
+  db_prefix: "test_"
+  db_protocol: "http"
+  db_provider: "CouchDB"
+  db_host: "owdev-couchdb.default.svc.cluster.local"
+  db_port: "5984"
+  db_url: "http://owdev-couchdb.default.svc.cluster.local:5984"
+  db_host_port: "owdev-couchdb.default.svc.cluster.local:5984"
+  db_whisk_actions: "test_whisks"
+  db_whisk_activations: "test_activations"
+  db_whisk_auths: "test_subjects"
+
+---
+# Source: openwhisk/templates/ow-whisk-cm.yaml
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: owdev-whisk.config
+  labels:
+    heritage: "Helm"
+    release: "owdev"
+    chart: "openwhisk-1.0.0"
+    app: owdev-openwhisk
+data:
+  whisk_info_date: "2020-10-20-01:00:00Z"
+  whisk_info_buildNo: "v1.0.0:20201020a"
+  whisk_cli_version_tag: "1.1.0"
+  whisk_system_namespace: "/whisk.system"
+  whisk_api_host_proto: "https"
+  whisk_api_host_port: "${OPENWHISK_API_HOST_PORT}"
+  whisk_api_host_name: "${OPENWHISK_API_HOST}"
+  whisk_api_host_nameAndPort: "${OPENWHISK_API_HOST}:${OPENWHISK_API_HOST_PORT}"
+  whisk_api_host_url: "https://${OPENWHISK_API_HOST}:${OPENWHISK_API_HOST_PORT}"
+
+---
+# Source: openwhisk/templates/tests/package-checker-cm.yaml
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: owdev-tests-package-checker
+  labels:
+    heritage: "Helm"
+    release: "owdev"
+    chart: "openwhisk-1.0.0"
+    app: owdev-openwhisk
+data:
+  myTask.sh: |+
+    #
+    # Licensed to the Apache Software Foundation (ASF) under one or more
+    # contributor license agreements.  See the NOTICE file distributed with
+    # this work for additional information regarding copyright ownership.
+    # The ASF licenses this file to You under the Apache License, Version 2.0
+    # (the "License"); you may not use this file except in compliance with
+    # the License.  You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    #
+  
+    # This test verifies that the catalog of system packages has been properly
+    # installed and is accessible using the guest auth.
+  
+    packageListingCheck() {
+      echo "Looking for package $1"
+      if [ -z "$1" ]; then
+        echo "Error, package listing check called without a package name"
+        exit 1
+      fi
+  
+      # Try several times to accommodate eventual consistency of CouchDB
+      PACKAGE_LIST_PASSED=false
+      PACKAGE_LIST_ATTEMPTS=0
+      until $PACKAGE_LIST_PASSED; do
+          RESULT=$(wsk package list /whisk.system -i | grep "$1")
+          if [ -z "$RESULT" ]; then
+              let PACKAGE_LIST_ATTEMPTS=PACKAGE_LIST_ATTEMPTS+1
+              if [ $PACKAGE_LIST_ATTEMPTS -gt 5 ]; then
+                  echo "FAILED! Could not list package $1"
+                  exit 1
+              fi
+              echo "wsk package list did not find $1; sleep 5 seconds and try again"
+              sleep 5
+          else
+              echo "success: wsk package list included $1"
+              PACKAGE_LIST_PASSED=true
+          fi
+      done
+    }
+  
+    # Configure wsk CLI
+    wsk property set --auth $WSK_AUTH --apihost $WSK_API_HOST_URL
+  
+  
+    # Check for the standard catalog of packages
+    packageListingCheck "github"
+    packageListingCheck "slack"
+    packageListingCheck "utils"
+    packageListingCheck "samples"
+    packageListingCheck "weather"
+    packageListingCheck "websocket"
+  
+    # Check packages for installed event providers
+    if [ "$OW_INSTALL_ALARM_PROVIDER" == "yes" ]; then
+        packageListingCheck "alarms"
+    fi
+    if [ "$OW_INSTALL_KAFKA_PROVIDER" == "yes" ]; then
+        packageListingCheck "messaging"
+    fi
+  
+    # Invoke /whisk.system/utils.echo as a smoketest of the installed actions
+    RESULT=$(wsk -i action invoke --blocking /whisk.system/utils/echo -p msg HelloWhisker | grep "\"msg\": \"HelloWhisker\"")
+    if [ -z "$RESULT" ]; then
+        echo "FAILED! Did not get expected result from invoking /whisk.system/utils/echo"
+        echo $RESULT
+        exit 1
+    fi
+  
+    echo "PASSED! Listed all expected packages and successfully invoked echo action"
+
+---
+# Source: openwhisk/templates/tests/smoketest-cm.yaml
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: owdev-tests-smoketest
+  labels:
+    heritage: "Helm"
+    release: "owdev"
+    chart: "openwhisk-1.0.0"
+    app: owdev-openwhisk
+data:
+  myTask.sh: |+
+    #
+    # Licensed to the Apache Software Foundation (ASF) under one or more
+    # contributor license agreements.  See the NOTICE file distributed with
+    # this work for additional information regarding copyright ownership.
+    # The ASF licenses this file to You under the Apache License, Version 2.0
+    # (the "License"); you may not use this file except in compliance with
+    # the License.  You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    #
+  
+    # A short smoketest to verify basic functionality of an OpenWhisk deployment
+  
+    # Configure wsk CLI
+    wsk property set --auth $WSK_AUTH --apihost $WSK_API_HOST_URL
+  
+    # create wsk action
+    cat > /tmp/hello.js << EOL
+    function main() {
+      return {body: 'Hello world'}
+    }
+    EOL
+  
+    echo "Creating action"
+    wsk -i action create hello /tmp/hello.js --web true || (echo "FAILED! Could not create a hello action!"; exit 1)
+  
+    # first list actions and expect to see hello
+    # Try several times to accommodate eventual consistency of CouchDB
+    echo "Listing action"
+    ACTION_LIST_PASSED=false
+    ACTION_LIST_ATTEMPTS=0
+    until $ACTION_LIST_PASSED; do
+      RESULT=$(wsk -i action list | grep hello)
+      if [ -z "$RESULT" ]; then
+        let ACTION_LIST_ATTEMPTS=ACTION_LIST_ATTEMPTS+1
+        if [ $ACTION_LIST_ATTEMPTS -gt 5 ]; then
+          echo "FAILED! Could not list hello action via CLI"
+          exit 1
+        fi
+        echo "wsk action list did not include hello; sleep 5 seconds and try again"
+        sleep 5
+      else
+          echo "success: wsk action list included hello"
+          ACTION_LIST_PASSED=true
+      fi
+    done
+  
+    # next invoke the new hello world action via the CLI
+    echo "Inoking action via CLI"
+    RESULT=$(wsk -i action invoke --blocking hello | grep "\"status\": \"success\"")
+    if [ -z "$RESULT" ]; then
+      echo "FAILED! Could not invoke hello action via CLI"
+      exit 1
+    fi
+  
+    # now run it as a web action
+    echo "Invoking as web action"
+    HELLO_URL=$(wsk -i action get hello --url | grep "https://")
+    RESULT=$(wget --no-check-certificate -qO- $HELLO_URL | grep 'Hello world')
+    if [ -z "$RESULT" ]; then
+      echo "FAILED! Could not invoke hello as a web action"
+      exit 1
+    fi
+  
+    # now define it as an api and invoke it that way
+    echo "Registering as an api"
+    wsk -i api create /demo /hello get hello || (echo "FAILED: unable to create API"; exit 1)
+    echo "Invoking action via the api"
+    API_URL=$(wsk -i api list | grep hello | awk '{print $4}')
+    RESULT=$(wget --no-check-certificate -qO- "$API_URL" | grep 'Hello world')
+    if [ -z "$RESULT" ]; then
+      echo "FAILED! Could not invoke hello via apigateway"
+      exit 1
+    fi
+  
+    # now delete the resouces so the test could be run again
+    wsk -i api delete /demo || (echo "FAILED! failed to delete API"; exit 1)
+    wsk -i action delete hello || (echo "FAILED! failed to delete action"; exit 1)
+  
+    echo "PASSED! Created Hello action and invoked via cli, web and apigateway"

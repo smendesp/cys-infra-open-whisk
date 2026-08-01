@@ -8,32 +8,69 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
-    name: Deploy OpenWhisk no Kubernetes
+  plan:
+    name: Terraform Plan
     runs-on: ubuntu-latest
     environment: production
-
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout do repositorio
         uses: actions/checkout@v6
 
-      - name: Preparar cys-infra-open-whisk.yaml renderizado
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.9"
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: open-whisk
+
+      - name: Terraform Plan
         env:
-          OPENWHISK_API_HOST: ${{ vars.OPENWHISK_API_HOST }}
-          OPENWHISK_API_HOST_PORT: ${{ vars.OPENWHISK_API_HOST_PORT }}
-          OPENWHISK_AUTH_SYSTEM_KEY: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
-          OPENWHISK_DB_PASSWORD: ${{ secrets.OPENWHISK_DB_PASSWORD }}
+          TF_VAR_openwhisk_api_host: ${{ vars.OPENWHISK_API_HOST }}
+          TF_VAR_openwhisk_api_host_port: ${{ vars.OPENWHISK_API_HOST_PORT }}
+          TF_VAR_openwhisk_auth_system_key: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
+          TF_VAR_openwhisk_db_password: ${{ secrets.OPENWHISK_DB_PASSWORD }}
         run: |
-          set -euo pipefail
-          mkdir -p deploy
+          terraform plan -out=tfplan \
+            -var="openwhisk_api_host=${TF_VAR_openwhisk_api_host:-localhost}" \
+            -var="openwhisk_api_host_port=${TF_VAR_openwhisk_api_host_port:-31001}" \
+            -var="openwhisk_auth_system_key=${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}" \
+            -var="openwhisk_db_password=${TF_VAR_openwhisk_db_password:-some_passw0rd}"
+        working-directory: open-whisk
 
-          # defaults para evitar campos vazios no schema do Helm
-          export OPENWHISK_API_HOST="${OPENWHISK_API_HOST:-localhost}"
-          export OPENWHISK_API_HOST_PORT="${OPENWHISK_API_HOST_PORT:-31001}"
-          export OPENWHISK_AUTH_SYSTEM_KEY="${OPENWHISK_AUTH_SYSTEM_KEY:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}"
-          export OPENWHISK_DB_PASSWORD="${OPENWHISK_DB_PASSWORD:-some_passw0rd}"
+  apply:
+    name: Deploy OpenWhisk no Kubernetes
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout do repositorio
+        uses: actions/checkout@v6
 
-          envsubst < cys-infra-open-whisk.yaml > deploy/cys-infra-open-whisk.yaml
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.9"
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: open-whisk
+
+      - name: Terraform Apply (renderizar manifests)
+        env:
+          TF_VAR_openwhisk_api_host: ${{ vars.OPENWHISK_API_HOST }}
+          TF_VAR_openwhisk_api_host_port: ${{ vars.OPENWHISK_API_HOST_PORT }}
+          TF_VAR_openwhisk_auth_system_key: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
+          TF_VAR_openwhisk_db_password: ${{ secrets.OPENWHISK_DB_PASSWORD }}
+        run: |
+          terraform apply -auto-approve \
+            -var="openwhisk_api_host=${TF_VAR_openwhisk_api_host:-localhost}" \
+            -var="openwhisk_api_host_port=${TF_VAR_openwhisk_api_host_port:-31001}" \
+            -var="openwhisk_auth_system_key=${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}" \
+            -var="openwhisk_db_password=${TF_VAR_openwhisk_db_password:-some_passw0rd}"
+        working-directory: open-whisk
 
       - name: Criar diretorio de destino na VM
         uses: appleboy/ssh-action@v1
@@ -55,11 +92,11 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: ${{ secrets.SSH_PORT }}
-          source: "deploy"
+          source: "open-whisk/deploy"
           target: "/opt/cys/openwhisk/deploy"
-          strip_components: 1
+          strip_components: 2
 
-      - name: Instalar Helm e implantar OpenWhisk
+      - name: Aplicar manifestos no cluster
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -70,69 +107,24 @@ jobs:
           script: |
             set -euo pipefail
 
-            # ---- Instalar Helm se necessario ----
-            if ! command -v helm &> /dev/null; then
-              echo "==> Instalando Helm v3..."
-              curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | sudo bash
-            fi
-            echo "Helm version: $(helm version --short)"
-
-            # ---- Adicionar repo do OpenWhisk ----
-            if ! helm repo list 2>/dev/null | grep -q 'openwhisk'; then
-              helm repo add openwhisk https://openwhisk.apache.org/charts
-            fi
-            helm repo update
-
-            # ---- Criar namespace se nao existir ----
-            kubectl get namespace openwhisk &>/dev/null \
-              || kubectl create namespace openwhisk
-
-            # ---- Implantar com Helm ----
-            echo "==> Implantando OpenWhisk..."
-            EXISTING=$(helm list -n openwhisk -q 2>/dev/null || true)
-
-            if echo "$EXISTING" | grep -q '^owdev$'; then
-              echo "Upgrade de release existente..."
-              helm upgrade owdev openwhisk/openwhisk \
-                -n openwhisk \
-                -f /opt/cys/openwhisk/deploy/cys-infra-open-whisk.yaml \
-                --timeout 30m \
-                --wait
-            else
-              echo "Instalando nova release..."
-              helm install owdev openwhisk/openwhisk \
-                -n openwhisk \
-                -f /opt/cys/openwhisk/deploy/cys-infra-open-whisk.yaml \
-                --create-namespace \
-                --timeout 30m \
-                --wait
-            fi
+            echo "==> Aplicando manifestos..."
+            for f in /opt/cys/openwhisk/deploy/0*.yaml; do
+              echo "--- $(basename "$f") ---"
+              kubectl apply -f "$f"
+            done
 
             echo ""
-            echo "==> Status do Helm release =="
-            helm status owdev -n openwhisk
-
-      - name: Aguardar pods ficarem prontos
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            set -euo pipefail
-
-            echo "==> Aguardando pods (timeout=900s)..."
-            kubectl wait --for=condition=Ready pods \
-              --all -n openwhisk --timeout=900s || true
+            echo "==> Aguardando deployments..."
+            kubectl wait --for=condition=Available deployment \
+              --all -n openwhisk --timeout=600s || true
 
             echo ""
-            echo "==> Aguardando conclusao do install-packages..."
-            kubectl wait --for=jsonpath='{.status.phase}'=Succeeded \
-              pods -n openwhisk -l name=owdev-install-packages \
-              --timeout=600s || true
+            echo "==> Aguardando conclusao dos jobs de inicializacao..."
+            kubectl wait --for=condition=Complete job \
+              --all -n openwhisk --timeout=600s || true
 
+            echo ""
+            echo "==> Status dos pods =="
             kubectl get pods -n openwhisk -o wide
 
       - name: Verificar implantacao
@@ -144,24 +136,12 @@ jobs:
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            echo "=== Helm releases ==="
-            helm list -n openwhisk
-
-            echo ""
             echo "=== Pods ==="
             kubectl get pods -n openwhisk -o wide
 
             echo ""
             echo "=== Services ==="
             kubectl get svc -n openwhisk
-
-            echo ""
-            echo "=== Ingress ==="
-            kubectl get ingress -n openwhisk 2>/dev/null || echo "Nenhum Ingress configurado"
-
-            echo ""
-            echo "=== Helm Test ==="
-            helm test owdev -n openwhisk --timeout 300s || true
 
             echo ""
             echo "=== Resumo do rollout ==="
@@ -182,6 +162,7 @@ jobs:
             echo "Todos os pods estao Running ou Completed."
 
       - name: Limpar diretorio de destino na VM
+        if: always()
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}

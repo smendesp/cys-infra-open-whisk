@@ -1,54 +1,83 @@
 # OpenWhisk no Kubernetes
 
-Implantacao do Apache OpenWhisk (Serverless) no cluster Kubernetes via Helm.
+Implantacao do Apache OpenWhisk (Serverless) no cluster Kubernetes via Terraform + kubectl.
 
-## Modo de execucao
+## Estrutura
 
-O deploy utiliza o modo **lean** (`controller.lean: true`), que elimina Kafka e Zookeeper e utiliza message bus em memoria. Isso reduz o consumo de recursos (menos pods, menos volumes) e simplifica a operacao.
-
-### Quando ativar o Kafka
-
-Para ambientes que exigem entrega garantida e persistente de mensagens:
-
-```yaml
-controller:
-  lean: false
-
-kafka:
-  replicaCount: 1
-  persistence:
-    size: "2Gi"
-
-zookeeper:
-  replicaCount: 1
-  persistence:
-    size: "1Gi"
 ```
+open-whisk/
+├── main.tf                        # Terraform: renderiza manifests com variaveis
+├── variables.tf                   # Inputs (api_host, auth_key, db_password)
+├── terraform.tfvars.template      # Template de valores (copia para terraform.tfvars)
+├── manifests/                     # Manifests Kubernetes com placeholders ${VAR}
+│   ├── 00-namespace.yaml
+│   ├── 01-secrets.yaml
+│   ├── 02-serviceaccounts.yaml
+│   ├── 03-rbac.yaml
+│   ├── 04-configmaps.yaml
+│   ├── 05-persistentvolumeclaims.yaml
+│   ├── 06-services.yaml
+│   ├── 07-statefulsets.yaml
+│   ├── 08-deployments.yaml
+│   ├── 09-jobs.yaml
+│   ├── 10-pods.yaml
+│   └── 11-networkpolicies.yaml
+├── deploy/                        # Renderizado pelo Terraform (gitignored)
+├── .github/workflows/
+│   └── deploy-openwhisk.yaml      # Pipeline CI/CD
+├── .gitignore
+└── README.md
+```
+
+## Modo Lean
+
+O deploy utiliza o modo **lean** (`controller.lean: true`), sem Kafka/Zookeeper. O estado e mensageria ficam em memoria.
+
+### Quando usar Kafka
+
+Para ambientes que exigem entrega garantida de mensagens, gere novamente os manifests:
+
+```bash
+helm template owdev openwhisk/openwhisk -f mycluster.yaml > manifests/all.yaml
+```
+
+E adicione os recursos de Kafka/Zookeeper ao diretorio `manifests/`.
 
 ## Pre-requisitos
 
 - Kubernetes cluster com pelo menos 1 worker node (4GB RAM, 2 CPUs)
-- Helm 3 (instalado automaticamente pelo pipeline)
-- Node labels (para clusters multi-node):
+- kubectl configurado na VM de deploy
+- `envsubst` disponivel na VM
+- Node labels (apenas para multi-node):
 
 ```bash
 kubectl label node <NODE> openwhisk-role=invoker
 kubectl label node <NODE> openwhisk-role=core
 kubectl label node <NODE> openwhisk-role=edge
+kubectl label node <NODE> openwhisk-role=provider
 ```
 
 ## Pipeline
 
-O deploy é feito via GitHub Actions (`deploy-openwhisk.yaml`), disparado por PR na branch `main` ou manualmente via `workflow_dispatch`.
+O deploy e feito via GitHub Actions, disparado por PR na branch `main` ou manualmente via `workflow_dispatch`.
 
 ### Fluxo
 
-1. Renderiza `mycluster.yaml` com variáveis de ambiente (envsubst)
-2. Copia o arquivo de valores para a VM via SCP
-3. Instala/atualiza o Helm na VM
-4. Executa `helm install` ou `helm upgrade` com o chart do OpenWhisk
-5. Aguarda todos os pods ficarem prontos
-6. Executa `helm test` para validacao basica
+| Evento | Job | Descricao |
+|--------|-----|-----------|
+| PR aberta/atualizada | `plan` | `terraform plan` — preview do que sera alterado |
+| merge na `main` ou `workflow_dispatch` | `apply` | Renderiza + SCP + `kubectl apply` + verify |
+
+### Etapas do job `apply`
+
+1. **Terraform Init** — baixa provider `null`
+2. **Terraform Apply** — renderiza manifests com `envsubst` para `deploy/`
+3. **SSH** — cria diretorio `/opt/cys/openwhisk` na VM
+4. **SCP** — copia `deploy/` para a VM
+5. **SSH** — `kubectl apply -f` em ordem numerica
+6. **SSH** — `kubectl wait` para deployments/jobs
+7. **SSH** — verificacao final (pods, services, logs de falhas)
+8. **Limpeza** — remove `/opt/cys/openwhisk` da VM
 
 ### Secrets e Variables (GitHub Environment `production`)
 
@@ -64,7 +93,21 @@ O deploy é feito via GitHub Actions (`deploy-openwhisk.yaml`), disparado por PR
 | `OPENWHISK_AUTH_SYSTEM_KEY` | secret | Chave de autenticacao do sistema |
 | `OPENWHISK_DB_PASSWORD` | secret | Senha do CouchDB |
 
-### Configuracao do `wsk` CLI
+## Uso local
+
+```bash
+# Copie o template e preencha os valores
+cp terraform.tfvars.template terraform.tfvars
+
+# Preview do que sera gerado
+terraform init
+terraform plan
+
+# Renderizar e aplicar (precisa de kubectl configurado)
+terraform apply -auto-approve
+```
+
+## Configuracao do `wsk` CLI
 
 Apos o deploy, configure o CLI:
 
@@ -81,9 +124,6 @@ Para certificados autoassinados (padrao), use `wsk -i`.
 # Status dos pods
 kubectl get pods -n openwhisk -o wide
 
-# Helm release
-helm list -n openwhisk
-
 # Teste de actions
 wsk -i action create hello <(echo 'function main() { return { message: "hello" }; }') --kind nodejs:18
 wsk -i action invoke hello --result
@@ -92,11 +132,5 @@ wsk -i action invoke hello --result
 ## Cleanup
 
 ```bash
-helm uninstall owdev -n openwhisk
+kubectl delete namespace openwhisk
 ```
-
-## Referencias
-
-- [OpenWhisk Deploy Kube](https://github.com/apache/openwhisk-deploy-kube)
-- [Configuracao do Helm Chart](https://github.com/apache/openwhisk-deploy-kube/blob/master/docs/configurationChoices.md)
-- [Troubleshooting](https://github.com/apache/openwhisk-deploy-kube/blob/master/docs/troubleshooting.md)
