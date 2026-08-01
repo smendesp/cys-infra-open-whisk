@@ -54,7 +54,32 @@ spec:
         env:
         - name: "READINESS_URL"
           value: http://owdev-couchdb.openwhisk.svc.cluster.local:5984/ow_kube_couchdb_initialized_marker
-        command: ["sh", "-c", "while true; do echo 'checking CouchDB readiness'; wget -T 5 --spider $READINESS_URL --header=\"Authorization: Basic d2hpc2tfYWRtaW46c29tZV9wYXNzdzByZA==\"; result=$?; if [ $result -eq 0 ]; then echo 'Success: CouchDB is ready!'; break; fi; echo '...not ready yet; sleeping 3 seconds before retry'; sleep 3; done;"]
+        - name: "DB_USERNAME"
+          valueFrom:
+            secretKeyRef:
+              name: owdev-db.auth
+              key: db_username
+        - name: "DB_PASSWORD"
+          valueFrom:
+            secretKeyRef:
+              name: owdev-db.auth
+              key: db_password
+        command:
+        - sh
+        - -c
+        - |
+          while true; do
+            echo 'checking CouchDB readiness'
+            AUTH_HEADER="Authorization: Basic $(printf '%s:%s' "$DB_USERNAME" "$DB_PASSWORD" | base64 | tr -d '\n')"
+            wget -T 5 --spider "$READINESS_URL" --header="$AUTH_HEADER"
+            result=$?
+            if [ $result -eq 0 ]; then
+              echo 'Success: CouchDB is ready!'
+              break
+            fi
+            echo '...not ready yet; sleeping 3 seconds before retry'
+            sleep 3
+          done
       # The lean controller requires invoker volumes mounts
 
       
