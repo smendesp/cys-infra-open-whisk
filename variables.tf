@@ -15,6 +15,12 @@ variable "openwhisk_auth_system_key" {
   sensitive   = true
 }
 
+variable "openwhisk_auth_guest_key" {
+  description = "Chave de autenticacao guest (deve ser diferente da system)"
+  type        = string
+  sensitive   = true
+}
+
 variable "openwhisk_db_password" {
   description = "Senha do CouchDB para usuario whisk_admin"
   type        = string
