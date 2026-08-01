@@ -29,7 +29,10 @@ metadata:
     app: owdev-openwhisk
 rules:
 - apiGroups: [""]
-  resources: ["secrets", "configmaps"]
+  resources: ["secrets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps"]
   verbs: ["create", "get"]
 ---
 # Source: openwhisk/templates/invoker-role.yaml
