@@ -125,16 +125,59 @@ jobs:
           script: |
             set -euo pipefail
 
-            echo "==> Aplicando manifestos..."
-            for f in /opt/cys/openwhisk/deploy/0*.yaml; do
+            # Fase 1: infraestrutura (namespace, RBAC, secrets, configmaps, PVCs)
+            echo "==> Fase 1: Infraestrutura =="
+            for f in /opt/cys/openwhisk/deploy/0{0,1,2,3,4,5}.yaml; do
+              [ -f "$f" ] || continue
               echo "--- $(basename "$f") ---"
+              kubectl apply -f "$f"
+            done
 
-              # Jobs sao imutaveis: remove antigos antes de aplicar
-              if [[ "$f" == *"09-jobs"* ]]; then
-                echo "Removendo jobs antigos..."
-                kubectl delete job --all -n openwhisk --ignore-not-found=true || true
-              fi
+            # Aguardar PVs (se houver)
+            kubectl wait --for=jsonpath='{.status.phase}'=Bound \
+              pvc --all -n openwhisk --timeout=120s || true
 
+            # Servicos (precisam existir antes dos pods)
+            for f in /opt/cys/openwhisk/deploy/06-services.yaml; do
+              [ -f "$f" ] || continue
+              echo "--- $(basename "$f") ---"
+              kubectl apply -f "$f"
+            done
+
+            # Fase 2: Jobs de inicializacao (precisam completar antes dos deployments)
+            echo ""
+            echo "==> Fase 2: Jobs de inicializacao =="
+            kubectl delete job --all -n openwhisk --ignore-not-found=true || true
+            sleep 2
+
+            for f in /opt/cys/openwhisk/deploy/09-jobs.yaml; do
+              [ -f "$f" ] || continue
+              echo "--- $(basename "$f") ---"
+              kubectl apply -f "$f"
+            done
+
+            echo "Aguardando gen-certs completar (cria secret TLS para nginx)..."
+            kubectl wait --for=condition=Complete job/owdev-gen-certs \
+              -n openwhisk --timeout=300s || {
+                echo "gen-certs falhou, logs:"
+                kubectl logs -n openwhisk job/owdev-gen-certs --tail=30 || true
+                exit 1
+              }
+
+            echo "Aguardando init-couchdb completar..."
+            kubectl wait --for=condition=Complete job/owdev-init-couchdb \
+              -n openwhisk --timeout=300s || {
+                echo "init-couchdb falhou, logs:"
+                kubectl logs -n openwhisk job/owdev-init-couchdb --tail=30 || true
+                exit 1
+              }
+
+            # Fase 3: Deployments e demais recursos
+            echo ""
+            echo "==> Fase 3: Workloads =="
+            for f in /opt/cys/openwhisk/deploy/0{7,8,10,11}.yaml; do
+              [ -f "$f" ] || continue
+              echo "--- $(basename "$f") ---"
               kubectl apply -f "$f"
             done
 
@@ -144,7 +187,7 @@ jobs:
               --all -n openwhisk --timeout=600s || true
 
             echo ""
-            echo "==> Aguardando conclusao dos jobs de inicializacao..."
+            echo "==> Aguardando conclusao dos jobs restantes..."
             kubectl wait --for=condition=Complete job \
               --all -n openwhisk --timeout=600s || true
 
