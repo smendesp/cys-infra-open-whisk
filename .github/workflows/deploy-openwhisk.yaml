@@ -127,7 +127,7 @@ jobs:
 
             # Fase 1: infraestrutura (namespace, RBAC, secrets, configmaps, PVCs, services)
             echo "==> Fase 1: Infraestrutura =="
-            PHASE1="00 01 02 03 04 05 06"
+            PHASE1="00 01 02 03 04 05 06 08"
             for prefix in $PHASE1; do
               for f in /opt/cys/openwhisk/deploy/$prefix-*.yaml; do
                 [ -f "$f" ] || continue
@@ -135,6 +135,16 @@ jobs:
                 kubectl apply -f "$f"
               done
             done
+
+            # Aguardar CouchDB antes de inicializa-lo
+            echo ""
+            echo "==> Aguardando CouchDB..."
+            kubectl wait --for=condition=Available deployment/owdev-couchdb \
+              -n openwhisk --timeout=300s || {
+                echo "ALERTA: CouchDB nao subiu, logs:"
+                kubectl logs -n openwhisk deployment/owdev-couchdb --tail=30 || true
+                kubectl describe pod -n openwhisk -l name=owdev-couchdb || true
+              }
 
             # Aguardar PVs (se houver)
             kubectl wait --for=jsonpath='{.status.phase}'=Bound \
@@ -171,7 +181,7 @@ jobs:
             # Fase 3: Deployments e demais recursos
             echo ""
             echo "==> Fase 3: Workloads =="
-            PHASE3="07 08 10 11"
+            PHASE3="07 10 11"
             for prefix in $PHASE3; do
               for f in /opt/cys/openwhisk/deploy/$prefix-*.yaml; do
                 [ -f "$f" ] || continue
