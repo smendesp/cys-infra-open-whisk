@@ -33,6 +33,19 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      - name: Validar formato das chaves auth
+        env:
+          TF_VAR_openwhisk_auth_system_key: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
+          TF_VAR_openwhisk_auth_guest_key: ${{ secrets.OPENWHISK_AUTH_GUEST_KEY }}
+        run: |
+          set -euo pipefail
+          SYSTEM_KEY="${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}"
+          GUEST_KEY="${TF_VAR_openwhisk_auth_guest_key:-a7fa79f2-8e4c-45d2-b3f1-92cd7408e12f:6dZxC2nBqLpR8vW4kYsT1aUfM3eH5gJ7dF9cN0lA2bC4pQ6rS8t}"
+
+          [[ "$SYSTEM_KEY" =~ ^[^:]+:[^:]+$ ]] || { echo "OPENWHISK_AUTH_SYSTEM_KEY invalida (esperado uuid:key)"; exit 1; }
+          [[ "$GUEST_KEY" =~ ^[^:]+:[^:]+$ ]] || { echo "OPENWHISK_AUTH_GUEST_KEY invalida (esperado uuid:key)"; exit 1; }
+          [[ "$SYSTEM_KEY" != "$GUEST_KEY" ]] || { echo "system e guest nao podem ser iguais"; exit 1; }
+
       - name: Terraform Plan
         env:
           TF_VAR_openwhisk_api_host: ${{ vars.OPENWHISK_API_HOST }}
@@ -64,6 +77,19 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
+
+      - name: Validar formato das chaves auth
+        env:
+          TF_VAR_openwhisk_auth_system_key: ${{ secrets.OPENWHISK_AUTH_SYSTEM_KEY }}
+          TF_VAR_openwhisk_auth_guest_key: ${{ secrets.OPENWHISK_AUTH_GUEST_KEY }}
+        run: |
+          set -euo pipefail
+          SYSTEM_KEY="${TF_VAR_openwhisk_auth_system_key:-23bc46b1-71f6-4ed5-8c54-816aa4f8c502:123zO3xZCLrMN6v2BKK1dXYFpXlPkccOFqm12CdAsMgRU4VrNZ9lyGVCGuMDGIwP}"
+          GUEST_KEY="${TF_VAR_openwhisk_auth_guest_key:-a7fa79f2-8e4c-45d2-b3f1-92cd7408e12f:6dZxC2nBqLpR8vW4kYsT1aUfM3eH5gJ7dF9cN0lA2bC4pQ6rS8t}"
+
+          [[ "$SYSTEM_KEY" =~ ^[^:]+:[^:]+$ ]] || { echo "OPENWHISK_AUTH_SYSTEM_KEY invalida (esperado uuid:key)"; exit 1; }
+          [[ "$GUEST_KEY" =~ ^[^:]+:[^:]+$ ]] || { echo "OPENWHISK_AUTH_GUEST_KEY invalida (esperado uuid:key)"; exit 1; }
+          [[ "$SYSTEM_KEY" != "$GUEST_KEY" ]] || { echo "system e guest nao podem ser iguais"; exit 1; }
 
       - name: Terraform Plan
         env:
