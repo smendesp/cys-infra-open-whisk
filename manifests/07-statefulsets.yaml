@@ -139,7 +139,7 @@ spec:
 
         # specific controller arguments
         - name: "CONTROLLER_OPTS"
-          value: "  -Dkubernetes.master=https://$KUBERNETES_SERVICE_HOST -Dwhisk.spi.ContainerFactoryProvider=org.apache.openwhisk.core.containerpool.kubernetes.KubernetesContainerFactoryProvider "
+          value: "  -Dkubernetes.master=https://$KUBERNETES_SERVICE_HOST -Dwhisk.spi.ContainerFactoryProvider=org.apache.openwhisk.core.containerpool.kubernetes.KubernetesContainerFactoryProvider -Dwhisk.kubernetes.user-pod-node-affinity.enabled=false "
 
         # action runtimes
         - name: "RUNTIMES_MANIFEST"
