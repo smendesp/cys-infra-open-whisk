@@ -156,7 +156,7 @@ jobs:
             kubectl delete job --all -n openwhisk --ignore-not-found=true || true
             sleep 2
 
-            for f in /opt/cys/openwhisk/deploy/09-*.yaml; do
+            for f in /opt/cys/openwhisk/deploy/09-init-jobs.yaml; do
               [ -f "$f" ] || continue
               echo "--- $(basename "$f") ---"
               kubectl replace --force -f "$f" 2>/dev/null || kubectl apply -f "$f"
@@ -194,6 +194,17 @@ jobs:
             echo "==> Aguardando deployments..."
             kubectl wait --for=condition=Available deployment \
               --all -n openwhisk --timeout=600s || true
+
+            echo ""
+            echo "==> Fase 4: Install packages job =="
+            if [ -f /opt/cys/openwhisk/deploy/13-install-packages-job.yaml ]; then
+              kubectl replace --force -f /opt/cys/openwhisk/deploy/13-install-packages-job.yaml 2>/dev/null || kubectl apply -f /opt/cys/openwhisk/deploy/13-install-packages-job.yaml
+              kubectl wait --for=condition=Complete job/owdev-install-packages -n openwhisk --timeout=600s || {
+                echo "install-packages falhou, logs:"
+                kubectl logs -n openwhisk job/owdev-install-packages --tail=80 || true
+                exit 1
+              }
+            fi
 
             echo ""
             echo "==> Aguardando conclusao dos jobs restantes..."
