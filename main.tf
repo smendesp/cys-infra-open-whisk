@@ -36,8 +36,10 @@ resource "null_resource" "render_manifests" {
       export OPENWHISK_AUTH_GUEST_KEY="${var.openwhisk_auth_guest_key}"
       export OPENWHISK_DB_PASSWORD="${var.openwhisk_db_password}"
 
+      SUBST_VARS='$${OPENWHISK_API_HOST} $${OPENWHISK_API_HOST_PORT} $${OPENWHISK_AUTH_SYSTEM_KEY} $${OPENWHISK_AUTH_GUEST_KEY} $${OPENWHISK_DB_PASSWORD}'
+
       for f in "${path.module}/manifests"/*.yaml; do
-        envsubst < "$f" > "$RENDERED_DIR/$(basename "$f")"
+        envsubst "$SUBST_VARS" < "$f" > "$RENDERED_DIR/$(basename "$f")"
       done
 
       echo "Manifests renderizados em $RENDERED_DIR"
