@@ -159,7 +159,7 @@ jobs:
             for f in /opt/cys/openwhisk/deploy/09-*.yaml; do
               [ -f "$f" ] || continue
               echo "--- $(basename "$f") ---"
-              kubectl apply -f "$f"
+              kubectl replace --force -f "$f" 2>/dev/null || kubectl apply -f "$f"
             done
 
             echo "Aguardando gen-certs completar (cria secret TLS para nginx)..."
