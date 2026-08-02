@@ -55,8 +55,18 @@ data:
     # Install the secrets whisk.auth.guest and whisk.auth.system into the cloned tree
     # after removing the defaults inherited from the checkout of openwhisk
     rm -f /openwhisk/ansible/files/auth.guest /openwhisk/ansible/files/auth.whisk.system
-    cp -f /etc/whisk-auth/guest /openwhisk/ansible/files/auth.guest
-    cp -f /etc/whisk-auth/system /openwhisk/ansible/files/auth.whisk.system
+    printf '%s' "$WHISK_AUTH_GUEST" > /openwhisk/ansible/files/auth.guest
+    printf '%s' "$WHISK_AUTH_SYSTEM" > /openwhisk/ansible/files/auth.whisk.system
+
+    # Sanity check: each key must be in uuid:key format
+    if ! grep -q ':' /openwhisk/ansible/files/auth.guest; then
+        echo "FATAL ERROR: invalid whisk.auth.guest format (expected uuid:key)."
+        exit 1
+    fi
+    if ! grep -q ':' /openwhisk/ansible/files/auth.whisk.system; then
+        echo "FATAL ERROR: invalid whisk.auth.system format (expected uuid:key)."
+        exit 1
+    fi
   
     # Sanity check: all subjects must have unique keys
     if cmp -s /openwhisk/ansible/files/auth.guest /openwhisk/ansible/files/auth.whisk.system; then

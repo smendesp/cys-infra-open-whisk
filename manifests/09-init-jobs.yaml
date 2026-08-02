@@ -91,6 +91,16 @@ spec:
             secretKeyRef:
               name: owdev-db.auth
               key: db_password
+        - name: "WHISK_AUTH_GUEST"
+          valueFrom:
+            secretKeyRef:
+              name: owdev-whisk.auth
+              key: guest
+        - name: "WHISK_AUTH_SYSTEM"
+          valueFrom:
+            secretKeyRef:
+              name: owdev-whisk.auth
+              key: system
         - name: "NODENAME"
           value: "couchdb0"
 
