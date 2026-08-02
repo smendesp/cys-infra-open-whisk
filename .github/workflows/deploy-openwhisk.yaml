@@ -125,24 +125,20 @@ jobs:
           script: |
             set -euo pipefail
 
-            # Fase 1: infraestrutura (namespace, RBAC, secrets, configmaps, PVCs)
+            # Fase 1: infraestrutura (namespace, RBAC, secrets, configmaps, PVCs, services)
             echo "==> Fase 1: Infraestrutura =="
-            for f in /opt/cys/openwhisk/deploy/0{0,1,2,3,4,5}.yaml; do
-              [ -f "$f" ] || continue
-              echo "--- $(basename "$f") ---"
-              kubectl apply -f "$f"
+            PHASE1="00 01 02 03 04 05 06"
+            for prefix in $PHASE1; do
+              for f in /opt/cys/openwhisk/deploy/$prefix-*.yaml; do
+                [ -f "$f" ] || continue
+                echo "--- $(basename "$f") ---"
+                kubectl apply -f "$f"
+              done
             done
 
             # Aguardar PVs (se houver)
             kubectl wait --for=jsonpath='{.status.phase}'=Bound \
               pvc --all -n openwhisk --timeout=120s || true
-
-            # Servicos (precisam existir antes dos pods)
-            for f in /opt/cys/openwhisk/deploy/06-services.yaml; do
-              [ -f "$f" ] || continue
-              echo "--- $(basename "$f") ---"
-              kubectl apply -f "$f"
-            done
 
             # Fase 2: Jobs de inicializacao (precisam completar antes dos deployments)
             echo ""
@@ -150,7 +146,7 @@ jobs:
             kubectl delete job --all -n openwhisk --ignore-not-found=true || true
             sleep 2
 
-            for f in /opt/cys/openwhisk/deploy/09-jobs.yaml; do
+            for f in /opt/cys/openwhisk/deploy/09-*.yaml; do
               [ -f "$f" ] || continue
               echo "--- $(basename "$f") ---"
               kubectl apply -f "$f"
@@ -175,10 +171,13 @@ jobs:
             # Fase 3: Deployments e demais recursos
             echo ""
             echo "==> Fase 3: Workloads =="
-            for f in /opt/cys/openwhisk/deploy/0{7,8,10,11}.yaml; do
-              [ -f "$f" ] || continue
-              echo "--- $(basename "$f") ---"
-              kubectl apply -f "$f"
+            PHASE3="07 08 10 11"
+            for prefix in $PHASE3; do
+              for f in /opt/cys/openwhisk/deploy/$prefix-*.yaml; do
+                [ -f "$f" ] || continue
+                echo "--- $(basename "$f") ---"
+                kubectl apply -f "$f"
+              done
             done
 
             echo ""
