@@ -19,10 +19,11 @@ open-whisk/
 │   ├── 06-services.yaml
 │   ├── 07-statefulsets.yaml
 │   ├── 08-couchdb-deployment.yaml
-│   ├── 09-jobs.yaml
+│   ├── 09-init-jobs.yaml
 │   ├── 10-pods.yaml
 │   ├── 11-networkpolicies.yaml
-│   └── 12-nginx-deployment.yaml
+│   ├── 12-nginx-deployment.yaml
+│   └── 13-install-packages-job.yaml
 ├── deploy/                        # Renderizado pelo Terraform (gitignored)
 ├── .github/workflows/
 │   └── deploy-openwhisk.yaml      # Pipeline CI/CD
